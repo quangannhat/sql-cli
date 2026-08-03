@@ -4,17 +4,24 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run --watch src/index.tsx"
+    "dev": "bun run --watch src/index.tsx",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "prettier": "^3.9.6"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@effect-atom/atom-react": "^0.5.0",
+    "@effect/platform": "^0.97.1",
+    "@effect/platform-bun": "^0.91.2",
     "@opentui/core": "^0.4.5",
     "@opentui/react": "^0.4.5",
+    "effect": "^3.22.1",
     "react": "^19.2.6"
   }
 }
