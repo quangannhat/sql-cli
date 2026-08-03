@@ -1,7 +1,5 @@
 import { Config, Context, Effect, Layer, Schema } from "effect";
 import { Path, FileSystem } from "@effect/platform";
-import { BunContext } from "@effect/platform-bun";
-import { Atom } from "@effect-atom/atom-react";
 
 export const DB_TYPES = ["Sqlite", "MySql", "Postgres"] as const;
 
@@ -53,13 +51,6 @@ export class AppConfig extends Context.Tag("@app/AppConfig")<
     ),
   );
 }
-
-export const configAtom = Atom.make(
-  Effect.gen(function* () {
-    const config = yield* AppConfig;
-    return config;
-  }).pipe(Effect.provide(AppConfig.Default), Effect.provide(BunContext.layer)),
-);
 
 const ensureConfig = Effect.gen(function* () {
   const homeDir = yield* Config.string("HOME");

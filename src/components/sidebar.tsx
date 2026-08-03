@@ -1,17 +1,19 @@
 import { Result, useAtomValue } from "@effect-atom/atom-react";
-import { configAtom } from "../config";
-import { focusAtom } from "../focus";
+import { configAtom } from "@app/atoms/config";
+import { focusAtom } from "@app/atoms/focus";
+import { borderColor } from "@app/theme";
 
 export function Sidebar() {
   const result = useAtomValue(configAtom);
   const focus = useAtomValue(focusAtom);
+  const isFocus = focus === "sidebar";
   const connections = Result.isSuccess(result) ? result.value.connections : [];
 
   return (
     <box
       width={30}
       border
-      borderColor={focus === "sidebar" ? "#ffffff" : "#444444"}
+      borderColor={borderColor(isFocus)}
       title="connections"
       padding={1}
     >

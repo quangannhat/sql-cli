@@ -1,28 +1,37 @@
 import { TextAttributes } from "@opentui/core";
 import { Result, useAtomSet, useAtomValue } from "@effect-atom/atom-react";
 import { useKeyboard } from "@opentui/react";
-import { configAtom } from "./config";
-import { focusAtom, windowPendingAtom } from "./focus";
-import { Sidebar } from "./components/sidebar";
+import { configAtom } from "@app/atoms/config";
+import { focusAtom } from "@app/atoms/focus";
+import { keyModeAtom } from "@app/atoms/keymap";
+import { resolve } from "@app/keymap";
+import { Sidebar } from "@app/components/sidebar";
+import { borderColor } from "@app/theme";
 
 export function App() {
   const result = useAtomValue(configAtom);
   const focus = useAtomValue(focusAtom);
   const setFocus = useAtomSet(focusAtom);
-  const windowPending = useAtomValue(windowPendingAtom);
-  const setWindowPending = useAtomSet(windowPendingAtom);
+  const keyMode = useAtomValue(keyModeAtom);
+  const setKeyMode = useAtomSet(keyModeAtom);
 
   useKeyboard((key) => {
-    if (key.ctrl && key.name === "w") {
-      setWindowPending(true);
+    const action = resolve(keyMode, key);
+
+    if (action === undefined) {
+      if (keyMode !== "normal") setKeyMode("normal");
       return;
     }
 
-    if (!windowPending) return;
-    setWindowPending(false);
-
-    if (key.name === "h") setFocus("sidebar");
-    if (key.name === "l") setFocus("content");
+    switch (action._tag) {
+      case "EnterMode":
+        setKeyMode(action.mode);
+        break;
+      case "FocusPane":
+        setFocus(action.pane);
+        setKeyMode("normal");
+        break;
+    }
   });
 
   if (!Result.isSuccess(result)) {
@@ -39,7 +48,7 @@ export function App() {
       <box
         flexGrow={1}
         border
-        borderColor={focus === "content" ? "#ffffff" : "#444444"}
+        borderColor={borderColor(focus === "content")}
         title="content"
         padding={1}
       >
