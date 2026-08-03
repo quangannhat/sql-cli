@@ -1,4 +1,6 @@
 {
+  "include": ["src"],
+  "exclude": ["vendor"],
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext"],

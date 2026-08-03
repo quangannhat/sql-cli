@@ -1,10 +1,9 @@
 import { TextAttributes } from "@opentui/core";
 import { Result, useAtomSet, useAtomValue } from "@effect-atom/atom-react";
-import { useKeyboard } from "@opentui/react";
+import { useBindings } from "@opentui/keymap/react";
 import { configAtom } from "@app/atoms/config";
 import { focusAtom } from "@app/atoms/focus";
-import { keyModeAtom } from "@app/atoms/keymap";
-import { resolve } from "@app/keymap";
+import { CommandMap, lookup } from "@app/keymap";
 import { Sidebar } from "@app/components/sidebar";
 import { borderColor } from "@app/theme";
 
@@ -12,27 +11,17 @@ export function App() {
   const result = useAtomValue(configAtom);
   const focus = useAtomValue(focusAtom);
   const setFocus = useAtomSet(focusAtom);
-  const keyMode = useAtomValue(keyModeAtom);
-  const setKeyMode = useAtomSet(keyModeAtom);
 
-  useKeyboard((key) => {
-    const action = resolve(keyMode, key);
-
-    if (action === undefined) {
-      if (keyMode !== "normal") setKeyMode("normal");
-      return;
-    }
-
-    switch (action._tag) {
-      case "EnterMode":
-        setKeyMode(action.mode);
-        break;
-      case "FocusPane":
-        setFocus(action.pane);
-        setKeyMode("normal");
-        break;
-    }
-  });
+  useBindings(
+    () => ({
+      bindings: lookup.bindings,
+      commands: [
+        { name: CommandMap.focus_sidebar, run: () => setFocus("sidebar") },
+        { name: CommandMap.focus_content, run: () => setFocus("content") },
+      ],
+    }),
+    [setFocus],
+  );
 
   if (!Result.isSuccess(result)) {
     return (
