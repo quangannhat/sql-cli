@@ -1,5 +1,6 @@
 import { Config, Context, Effect, Layer, Schema } from "effect";
 import { Path, FileSystem } from "@effect/platform";
+import { homedir } from "node:os";
 
 export const DB_TYPES = ["Sqlite", "MySql", "Postgres"] as const;
 
@@ -8,7 +9,7 @@ export const Connection = Schema.Struct({
   connection: Schema.String,
   type: Schema.Literal(...DB_TYPES),
 });
-type Connection = typeof Connection.Type;
+export type Connection = typeof Connection.Type;
 
 const AppConfigSchema = Schema.Struct({
   connections: Schema.Array(Connection),
@@ -17,61 +18,71 @@ export type AppConfigType = typeof AppConfigSchema.Type;
 
 const decodeConfig = Schema.decode(Schema.parseJson(AppConfigSchema));
 
-const DEFAULT_CONFIG: typeof AppConfigSchema.Type = {
+const DEFAULT_CONFIG: AppConfigType = {
   connections: [],
 };
 
-export class AppConfig extends Context.Tag("@app/AppConfig")<
-  AppConfig,
-  typeof AppConfigSchema.Type
->() {
+export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("ConfigLoadError", {
+  message: Schema.String,
+}) {}
+
+const resolvePaths = Effect.fn("resolvePaths")(function* () {
+  const home = yield* Config.string("HOME").pipe(Config.withDefault(homedir()));
+  const path = yield* Path.Path;
+
+  const directory = path.join(home, ".config", "sql-cli");
+  return { directory, file: path.join(directory, "config.json") };
+});
+
+const readOrInitialize = Effect.fn("readOrInitialize")(function* (directory: string, file: string) {
+  const fs = yield* FileSystem.FileSystem;
+
+  return yield* fs.readFileString(file).pipe(
+    Effect.catchIf(
+      (error) => error._tag === "SystemError" && error.reason === "NotFound",
+      () =>
+        Effect.gen(function* () {
+          const contents = JSON.stringify(DEFAULT_CONFIG, null, 2);
+          yield* fs.makeDirectory(directory, { recursive: true });
+          yield* fs.writeFileString(file, contents);
+          return contents;
+        }),
+    ),
+  );
+});
+
+export const loadConfig = Effect.fn("loadConfig")(function* () {
+  const { directory, file } = yield* resolvePaths();
+  const contents = yield* readOrInitialize(directory, file);
+  return yield* decodeConfig(contents);
+});
+
+const loadConfigOrFail = loadConfig().pipe(
+  Effect.catchTags({
+    ConfigError: (error) =>
+      new ConfigLoadError({ message: `Could not resolve the config path: ${error.message}` }),
+    BadArgument: (error) =>
+      new ConfigLoadError({
+        message: `Invalid argument in ${error.module}.${error.method}: ${error.message}`,
+      }),
+    SystemError: (error) =>
+      new ConfigLoadError({
+        message: `Could not access ${error.pathOrDescriptor} (${error.reason}): ${error.message}`,
+      }),
+    ParseError: (error) =>
+      new ConfigLoadError({ message: `Invalid config file: ${error.message}` }),
+  }),
+);
+
+export class AppConfig extends Context.Tag("@app/AppConfig")<AppConfig, AppConfigType>() {
+  public static readonly layer = Layer.effect(AppConfig, loadConfigOrFail);
+
   public static readonly Default = Layer.effect(
     AppConfig,
-    Effect.gen(function* () {
-      const configPath = yield* ensureConfig;
-      const config = yield* parseConfig(configPath);
-      return config;
-    }).pipe(
-      Effect.catchTags({
-        ConfigError: (error) =>
-          Effect.logError(`Could not resolve the config path: ${error.message}`).pipe(
-            Effect.as(DEFAULT_CONFIG),
-          ),
-        BadArgument: (error) =>
-          Effect.logError(
-            `Invalid argument in ${error.module}.${error.method}: ${error.message}`,
-          ).pipe(Effect.as(DEFAULT_CONFIG)),
-        SystemError: (error) =>
-          Effect.logError(
-            `Could not access ${error.pathOrDescriptor} (${error.reason}): ${error.message}`,
-          ).pipe(Effect.as(DEFAULT_CONFIG)),
-        ParseError: (error) =>
-          Effect.logError(`Invalid config file: ${error.message}`).pipe(Effect.as(DEFAULT_CONFIG)),
-      }),
+    loadConfigOrFail.pipe(
+      Effect.catchTag("ConfigLoadError", (error) =>
+        Effect.logError(error.message).pipe(Effect.as(DEFAULT_CONFIG)),
+      ),
     ),
   );
 }
-
-const ensureConfig = Effect.gen(function* () {
-  const homeDir = yield* Config.string("HOME");
-  const path = yield* Path.Path;
-  const fs = yield* FileSystem.FileSystem;
-
-  const configDir = path.join(homeDir, ".config", "sql-cli");
-  const configPath = path.join(configDir, "config.json");
-  yield* fs.makeDirectory(configDir, { recursive: true });
-  const fileExists = yield* fs.exists(configPath);
-  if (!fileExists) {
-    yield* fs.writeFileString(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2));
-  }
-
-  return configPath;
-});
-
-const parseConfig = (path: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const content = yield* fs.readFileString(path);
-    const parsed = yield* decodeConfig(content);
-    return parsed;
-  });
