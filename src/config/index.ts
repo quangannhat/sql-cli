@@ -1,5 +1,4 @@
-import { Config, Context, Effect, Layer, Schema } from "effect";
-import { Path, FileSystem } from "@effect/platform";
+import { Config, Context, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { homedir } from "node:os";
 
 export const DB_TYPES = ["Sqlite", "MySql", "Postgres"] as const;
@@ -7,7 +6,7 @@ export const DB_TYPES = ["Sqlite", "MySql", "Postgres"] as const;
 export const Connection = Schema.Struct({
   name: Schema.String,
   connection: Schema.String,
-  type: Schema.Literal(...DB_TYPES),
+  type: Schema.Literals(DB_TYPES),
 });
 export type Connection = typeof Connection.Type;
 
@@ -16,7 +15,7 @@ const AppConfigSchema = Schema.Struct({
 });
 export type AppConfigType = typeof AppConfigSchema.Type;
 
-const decodeConfig = Schema.decode(Schema.parseJson(AppConfigSchema));
+const decodeConfig = Schema.decodeEffect(Schema.fromJsonString(AppConfigSchema));
 
 const DEFAULT_CONFIG: AppConfigType = {
   connections: [],
@@ -39,7 +38,7 @@ const readOrInitialize = Effect.fn("readOrInitialize")(function* (directory: str
 
   return yield* fs.readFileString(file).pipe(
     Effect.catchIf(
-      (error) => error._tag === "SystemError" && error.reason === "NotFound",
+      (error) => error.reason._tag === "NotFound",
       () =>
         Effect.gen(function* () {
           const contents = JSON.stringify(DEFAULT_CONFIG, null, 2);
@@ -58,26 +57,13 @@ export const loadConfig = Effect.fn("loadConfig")(function* () {
 });
 
 const loadConfigOrFail = loadConfig().pipe(
-  Effect.catchTags({
-    ConfigError: (error) =>
-      new ConfigLoadError({ message: `Could not resolve the config path: ${error.message}` }),
-    BadArgument: (error) =>
-      new ConfigLoadError({
-        message: `Invalid argument in ${error.module}.${error.method}: ${error.message}`,
-      }),
-    SystemError: (error) =>
-      new ConfigLoadError({
-        message: `Could not access ${error.pathOrDescriptor} (${error.reason}): ${error.message}`,
-      }),
-    ParseError: (error) =>
-      new ConfigLoadError({ message: `Invalid config file: ${error.message}` }),
-  }),
+  Effect.mapError((error) => new ConfigLoadError({ message: error.message })),
 );
 
-export class AppConfig extends Context.Tag("@app/AppConfig")<AppConfig, AppConfigType>() {
+export class AppConfig extends Context.Service<AppConfig, AppConfigType>()("@app/AppConfig") {
   public static readonly layer = Layer.effect(AppConfig, loadConfigOrFail);
 
-  public static readonly Default = Layer.effect(
+  public static readonly layerFallback = Layer.effect(
     AppConfig,
     loadConfigOrFail.pipe(
       Effect.catchTag("ConfigLoadError", (error) =>
